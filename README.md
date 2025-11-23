@@ -99,6 +99,8 @@ This project uses **ESPHome**. You will need a running Home Assistant instance w
     - For the first-time installation, choose "Plug into this computer" and follow the prompts to flash the device via a USB cable.
     - After the first flash, all subsequent updates can be done "Wirelessly" (OTA).
 
+![ESP Home device http server ](images/Picture_11.jpg)
+
 ## Usage in Home Assistant
 
 Once the device is flashed and running, Home Assistant should automatically discover it.
