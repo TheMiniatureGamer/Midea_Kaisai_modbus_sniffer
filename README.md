@@ -26,6 +26,7 @@ This **"listen-only**" approach is highly stable and safe, as it never writes to
 | 5V DC Power Supply | 1 | A micro-USB phone charger is perfect. |
 | Jumper Wires | - | For connecting the components. |
 
+[RS485 to TTL Converter](https://pl.aliexpress.com/w/wholesale-max485.html?g=y&SearchText=max485&sortType=total_tranpro_desc)
 
 
 ## Hardware Assembly & Wiring
