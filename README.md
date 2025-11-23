@@ -6,6 +6,7 @@ This "listen-only" approach is highly stable and safe, as it never writes to the
 
 ![My Installation](images/my-installation-1.jpg)
 
+
 ## Features
 
 - **Passive Sniffing:** Reads all data without interfering with the heat pump's own controller.
@@ -62,13 +63,12 @@ Most RS485 modules include a 120Ω termination resistor (often labeled R7) solde
 Here is how the final assembly looks in practice.
 
 1.  **The Electronics:** The ESP32 board connected to the RS485-to-TTL converter.
-    ![Electronics](images/my-installation-2.jpg)
-
 2.  **Kaisai Network Module:** The RS485 `A` and `B` terminals where the sniffer is connected in parallel.
-    ![Kaisai Module](images/my-installation-3.jpg)
-
 3.  **The RS485 Converter:** Close-up of the converter module with wires attached.
-    ![RS485 Converter](images/my-installation-4.jpg)
+![My Installation](Picture_1.jpg)
+![My Installation](Picture_6.jpg)
+![My Installation](Picture_5.jpg)
+![My Installation](Picture_2.jpg)
 
 ## Software Setup
 
