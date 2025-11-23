@@ -1,0 +1,1362 @@
+# ===================================================================
+#   ESPHome - Full Passive Modbus Monitor (Final Version)
+# ===================================================================
+#   Uses reliable query and response queuing logic
+#   and contains a complete list of defined entities for the heat pump.
+# ===================================================================
+
+substitutions:
+  devicename: heatpump-monitor
+  description: "Passive Heatpump Modbus Monitor"
+
+esphome:
+  name: "${devicename}"
+  comment: "${description}"
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+api:
+  port: 6053
+  reboot_timeout: 0s
+
+logger:
+  level: WARN # Main login level for INFO
+  baud_rate: 115200
+  logs:
+    modbus_sniffer: WARN # Logs from our sniffer are also on INFO
+    uart: WARN
+
+web_server:
+  port: 80
+ota:
+  platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+captive_portal:
+
+# === Global Variables (from the working version) ===
+globals:
+  - id: frame_buffer
+    type: std::vector<uint8_t>
+    restore_value: no
+  - id: last_byte_millis
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: pending_requests
+    type: std::vector<uint16_t>
+    restore_value: no
+  - id: holding_registers
+    type: std::map<uint16_t, uint16_t>
+    restore_value: no
+  - id: request_count
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: response_count
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: matched_count
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: last_publish_millis
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: publish_pending
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: enable_diagnostics
+    type: bool
+    restore_value: yes
+    initial_value: 'false' # Diagnostics are disabled by default
+
+# === UART configuration (from working version) ===
+uart:
+  id: mod_bus
+  rx_pin: 16
+  baud_rate: 9600
+  stop_bits: 1
+
+# ===================================================================
+#   Entity Definitions (FULL LIST)
+# ===================================================================
+
+# --- SELECTS ---
+select:
+  - platform: template
+    name: "Operational Mode"
+    id: heatpump_operational_mode
+    optimistic: false
+    options: ["Heat", "Cool", "Auto"]
+    set_action:
+      then: []
+  - platform: template
+    name: "Power Input Limitation Type"
+    id: heatpump_power_input_limitation_type
+    optimistic: false
+    options: ["None", "1", "2", "3", "4", "5", "6", "7", "8"]
+    set_action:
+      then: []
+  - platform: template
+    name: "Zone 1 End Heating Mode Emission Type"
+    id: heatpump_zone_1_end_heating_mode_emission_type
+    optimistic: false
+    options: ["Underfloor Heating", "Fan Coil Unit", "Radiator", "Unknown"]
+    set_action:
+      then: []
+  - platform: template
+    name: "Zone 2 End Heating Mode Emission Type"
+    id: heatpump_zone_2_end_heating_mode_emission_type
+    optimistic: false
+    options: ["Underfloor Heating", "Fan Coil Unit", "Radiator", "Unknown"]
+    set_action:
+      then: []
+  - platform: template
+    name: "Zone 1 End Cooling Mode Emission Type"
+    id: heatpump_zone_1_end_cooling_mode_emission_type
+    optimistic: false
+    options: ["Underfloor Heating", "Fan Coil Unit", "Radiator", "Unknown"]
+    set_action:
+      then: []
+  - platform: template
+    name: "Zone 2 End Cooling Mode Emission Type"
+    id: heatpump_zone_2_end_cooling_mode_emission_type
+    optimistic: false
+    options: ["Underfloor Heating", "Fan Coil Unit", "Radiator", "Unknown"]
+    set_action:
+      then: []
+  - platform: template
+    name: "Solar Function Mode"
+    id: heatpump_solar_function_mode
+    optimistic: false
+    options: ["No Function", "Solar + Heat Pump", "Only Solar"]
+    set_action:
+      then: []
+
+# --- SENSORS ---
+sensor:
+#  - platform: uptime
+#    name: "Monitor Uptime"
+  - platform: template
+    name: "DIA Request Counter"
+    id: request_counter_sensor
+    icon: "mdi:upload"
+  - platform: template
+    name: "DIA Response Counter"
+    id: response_counter_sensor
+    icon: "mdi:download"
+  - platform: template
+    name: "DIA Matched Frames"
+    id: matched_counter_sensor
+    icon: "mdi:check-decagram"
+  - platform: template
+    name: "Compressor Starts Per Hour"
+    id: compressor_starts_per_hour
+    unit_of_measurement: "starts/h"
+  - platform: template
+    name: "Coefficient of Performance"
+    id: heatpump_coefficient_of_performance
+    unit_of_measurement: "COP"
+    accuracy_decimals: 2
+  - platform: template
+    name: "Forced Hydraulic Module Rear Electric Heater 1"
+    id: heatpump_forced_hydraulic_module_rear_electric_heater_1
+  - platform: template
+    name: "t_SG_MAX"
+    id: heatpump_t_sg_max
+    unit_of_measurement: "hr"
+  - platform: template
+    name: "Compressor Operating Frequency"
+    id: heatpump_compressor_operating_frequency
+    unit_of_measurement: "Hz"
+    device_class: frequency
+  - platform: template
+    name: "Fan Speed"
+    id: heatpump_fan_speed
+    unit_of_measurement: "r/min"
+  - platform: template
+    name: "PMV Openness"
+    id: heatpump_pmv_openness
+    unit_of_measurement: "%"
+  - platform: template
+    name: "Water Inlet Temperature"
+    id: heatpump_water_inlet_temperature
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 1
+  - platform: template
+    name: "Water Outlet Temperature"
+    id: heatpump_water_outlet_temperature
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 1
+  - platform: template
+    name: "Condensor Temperature T3"
+    id: heatpump_condensor_temperature_t3
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 1
+  - platform: template
+    name: "Outdoor Ambient Temperature"
+    id: heatpump_outdoor_ambient_temperature
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 1
+  - platform: template
+    name: "Discharge Temperature"
+    id: heatpump_discharge_temperature
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 1
+  - platform: template
+    name: "Return Air Temperature"
+    id: heatpump_return_air_temperature
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 1
+  - platform: template
+    name: "Total Water Outlet Temperature T1"
+    id: heatpump_total_water_outlet_temperature_t1
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 1
+  - platform: template
+    name: "System Total Water Outlet Temperature T1B"
+    id: heatpump_system_total_water_outlet_temperature_t1b
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 1
+  - platform: template
+    name: "Refrigerant Liquid Side Temperature T2"
+    id: heatpump_refrigerant_liquid_side_temperature_t2
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 1
+  - platform: template
+    name: "Refrigerant Gas Side Temperature T2B"
+    id: heatpump_refrigerant_gas_side_temperature_t2b
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 1
+  - platform: template
+    name: "Room Temperature Ta"
+    id: heatpump_room_temperature_ta
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 1
+  - platform: template
+    name: "Water Tank Temperature T5"
+    id: heatpump_water_tank_temperature_t5
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 1
+  - platform: template
+    name: "Outdoor Unit High Pressure"
+    id: heatpump_outdoor_unit_high_pressure
+    unit_of_measurement: "kPa"
+    device_class: pressure
+  - platform: template
+    name: "Outdoor Unit Low Pressure"
+    id: heatpump_outdoor_unit_low_pressure
+    unit_of_measurement: "kPa"
+    device_class: pressure
+  - platform: template
+    name: "Outdoor Unit Current"
+    id: heatpump_outdoor_unit_current
+    unit_of_measurement: "A"
+    device_class: current
+    accuracy_decimals: 1
+  - platform: template
+    name: "Outdoor Unit Voltage"
+    id: heatpump_outdoor_unit_voltage
+    unit_of_measurement: "V"
+    device_class: voltage
+  - platform: template
+    name: "Tbt1"
+    id: heatpump_tbt1
+    unit_of_measurement: "°C"
+    device_class: temperature
+  - platform: template
+    name: "Tbt2"
+    id: heatpump_tbt2
+    unit_of_measurement: "°C"
+    device_class: temperature
+  - platform: template
+    name: "Compressor Operation Time"
+    id: heatpump_compressor_operation_time
+    unit_of_measurement: "hr"
+  - platform: template
+    name: "Unit Capacity"
+    id: heatpump_unit_capacity
+    unit_of_measurement: "kWh"
+  - platform: template
+    name: "Current Fault"
+    id: heatpump_current_fault
+  - platform: template
+    name: "Fault 1"
+    id: heatpump_fault_1
+  - platform: template
+    name: "Fault 2"
+    id: heatpump_fault_2
+  - platform: template
+    name: "Fault 3"
+    id: heatpump_fault_3
+  - platform: template
+    name: "Software Version"
+    id: heatpump_software_version
+  - platform: template
+    name: "Wired Controller Version Number"
+    id: heatpump_wired_controller_version_number
+  - platform: template
+    name: "Compressor Target Frequency"
+    id: heatpump_compressor_target_frequency
+    unit_of_measurement: "Hz"
+    device_class: frequency
+  - platform: template
+    name: "DC Bus Current"
+    id: heatpump_dc_bus_current
+    unit_of_measurement: "A"
+    device_class: current
+  - platform: template
+    name: "DC Bus Voltage"
+    id: heatpump_dc_bus_voltage
+    unit_of_measurement: "V"
+    device_class: voltage
+  - platform: template
+    name: "TF module temperature"
+    id: heatpump_tf_module_temperature
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 1
+  - platform: template
+    name: "Climate Curve T1S Calculated Value 1"
+    id: heatpump_climate_curve_t1s_calculated_value_1
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 1
+  - platform: template
+    name: "Climate Curve T1S Calculated Value 2"
+    id: heatpump_climate_curve_t1s_calculated_value_2
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 1
+  - platform: template
+    name: "Water Flow"
+    id: heatpump_water_flow
+    unit_of_measurement: "m3/H"
+    accuracy_decimals: 2
+  - platform: template
+    name: "Limit Scheme Of Outdoor Unit Current"
+    id: heatpump_limit_scheme_of_outdoor_unit_current
+    unit_of_measurement: "kW"
+  - platform: template
+    name: "Ability Of Hydraulic Module"
+    id: heatpump_ability_of_hydraulic_module
+    unit_of_measurement: "kW"
+    accuracy_decimals: 2
+  - platform: template
+    name: "Tsolar"
+    id: heatpump_tsolar
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 1
+  - platform: template
+    name: "Electricity Consumption"
+    id: heatpump_electricity_consumption
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 2
+  - platform: template
+    name: "Power Output"
+    id: heatpump_power_output
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 2
+  - platform: template
+    name: "Real-time heating Capacity"
+    id: heatpump_realtime_heating_capacity
+    unit_of_measurement: "kW"
+    accuracy_decimals: 2
+  - platform: template
+    name: "Real-time renewable heating capacity"
+    id: heatpump_realtime_renewable_heating_capacity
+    unit_of_measurement: "kW"
+    accuracy_decimals: 2
+  - platform: template
+    name: "Real-time heating power consumption"
+    id: heatpump_realtime_heating_power_consumption
+    unit_of_measurement: "kW"
+    accuracy_decimals: 2
+  - platform: template
+    name: "Real-time heating COP"
+    id: heatpump_realtime_heating_cop
+    unit_of_measurement: "COP"
+    accuracy_decimals: 2
+  - platform: template
+    name: "Total heating energy produced for system"
+    id: heatpump_total_heating_energy_produced_for_system
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 2
+  - platform: template
+    name: "Total heating renewable energy produced for system"
+    id: heatpump_total_renewable_heating_energy_produced_for_system
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 2
+  - platform: template
+    name: "Total heating power consumed for system"
+    id: heatpump_total_heating_power_consumed_for_system
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 2
+  - platform: template
+    name: "Total COP in heating mode for master unit"
+    id: heatpump_total_cop_in_heating_mode_for_master_unit
+    unit_of_measurement: "COP"
+    accuracy_decimals: 2
+  - platform: template
+    name: "Total cooling energy produced for master unit"
+    id: heatpump_total_cooling_energy_produced_for_master_unit
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 2
+  - platform: template
+    name: "Total cooling power consumed for master unit"
+    id: heatpump_total_cooling_power_consumed_for_master_unit
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 2
+  - platform: template
+    name: "Total COP in cooling mode for master unit"
+    id: heatpump_total_cop_in_cooling_mode_for_master_unit
+    unit_of_measurement: "COP"
+    accuracy_decimals: 2
+  - platform: template
+    name: "Total DHW energy produced for master unit"
+    id: heatpump_total_dhw_energy_produced_for_master_unit
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 2
+  - platform: template
+    name: "Total DHW power consumed for master unit"
+    id: heatpump_total_dhw_power_consumed_for_master_unit
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 2
+  - platform: template
+    name: "Total COP in DHW mode for master unit"
+    id: heatpump_total_cop_in_dhw_mode_for_master_unit
+    unit_of_measurement: "COP"
+    accuracy_decimals: 2
+  - platform: template
+    name: "Real-time cooling capacity"
+    id: heatpump_realtime_cooling_capacity
+    unit_of_measurement: "kW"
+    accuracy_decimals: 2
+  - platform: template
+    name: "Real-time cooling power consumption"
+    id: heatpump_realtime_cooling_power_consumption
+    unit_of_measurement: "kW"
+    accuracy_decimals: 2
+  - platform: template
+    name: "Real-time cooling EER"
+    id: heatpump_realtime_cooling_eer
+    unit_of_measurement: "COP"
+    accuracy_decimals: 2
+  - platform: template
+    name: "Real-time DHW heating capacity"
+    id: heatpump_realtime_dhw_heating_capacity
+    unit_of_measurement: "kW"
+    accuracy_decimals: 2
+  - platform: template
+    name: "Real-time DHW heating power consumption"
+    id: heatpump_realtime_dhw_heating_power_consumption
+    unit_of_measurement: "kW"
+    accuracy_decimals: 2
+  - platform: template
+    name: "Real-time DHW heating COP"
+    id: heatpump_realtime_dhw_heating_cop
+    unit_of_measurement: "COP"
+    accuracy_decimals: 2
+# --- SENSORS FOR ADVANCED CONFIGURATION PARAMETERS (CFG) ---
+  - platform: template
+    name: "[CFG] Air Temperature Ts"
+    id: heatpump_cfg_air_temp_ts
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 1
+  - platform: template
+    name: "[CFG] Weather Curve Zone 1"
+    id: heatpump_cfg_weather_curve_z1
+  - platform: template
+    name: "[CFG] Weather Curve Zone 2"
+    id: heatpump_cfg_weather_curve_z2
+  - platform: template
+    name: "[CFG] 201 Temp Upper Limit Of T1S Cooling Zone 1"
+    id: heatpump_cfg_201_temp_upper_limit_t1s_cooling_zone_1
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 201 Temp Upper Limit Of T1S Cooling Zone 2"
+    id: heatpump_cfg_201_temp_upper_limit_t1s_cooling_zone_2
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 202 Temp Lower Limit Of T1S Cooling Zone 1"
+    id: heatpump_cfg_202_temp_lower_limit_t1s_cooling_zone_1
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 202 Temp Lower Limit Of T1S Cooling Zone 2"
+    id: heatpump_cfg_202_temp_lower_limit_t1s_cooling_zone_2
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 203 Temp Upper Limit Of T1S Heating Zone 1"
+    id: heatpump_cfg_203_temp_upper_limit_t1s_heating_zone_1
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 203 Temp Upper Limit Of T1S Heating Zone 2"
+    id: heatpump_cfg_203_temp_upper_limit_t1s_heating_zone_2
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 204 Temp Lower Limit Of T1S Heating Zone 1"
+    id: heatpump_cfg_204_temp_lower_limit_t1s_heating_zone_1
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 204 Temp Lower Limit Of T1S Heating Zone 2"
+    id: heatpump_cfg_204_temp_lower_limit_t1s_heating_zone_2
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 205 Temp Upper Limit Of TS Setting"
+    id: heatpump_cfg_205_temp_upper_limit_of_ts_setting
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 206 Temp Lower Limit Of TS Setting"
+    id: heatpump_cfg_206_temp_lower_limit_of_ts_setting
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 207 Temp Upper Limit Of water Heating"
+    id: heatpump_cfg_207_temp_upper_limit_of_water_heating
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 208 Temp Lower Limit Of Water Heating"
+    id: heatpump_cfg_208_temp_lower_limit_of_water_heating
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 209 DHW Pump Return Running Time"
+    id: heatpump_cfg_209_dhw_pump_return_running_time
+    unit_of_measurement: "min"
+  - platform: template
+    name: "[CFG] 212 dT5 On"
+    id: heatpump_cfg_212_dt5_on
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 213 dT1S5"
+    id: heatpump_cfg_213_dt1s5
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 214 T Interval DHW"
+    id: heatpump_cfg_214_t_interval_dhw
+    unit_of_measurement: "min"
+  - platform: template
+    name: "[CFG] 215 T4 DHW max"
+    id: heatpump_cfg_215_t4_dhw_max
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 216 T4 DHW min"
+    id: heatpump_cfg_216_t4dhwmin
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 217 t TBH Delay"
+    id: heatpump_cfg_217_t_tbh_delay
+    unit_of_measurement: "min"
+  - platform: template
+    name: "[CFG] 218 dT5 TBH Off"
+    id: heatpump_cfg_218_dt5_tbh_off
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 219 T4 TBH On"
+    id: heatpump_cfg_219_t4_tbh_on
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 220 Temp For Disinfection Operation"
+    id: heatpump_cfg_220_t5s_di
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 221 Maximum Disinfection Duration"
+    id: heatpump_cfg_221_t_di_max
+    unit_of_measurement: "min"
+  - platform: template
+    name: "[CFG] 222 Disinfection High Temperature Duration"
+    id: heatpump_cfg_222_t_di_hightemp
+    unit_of_measurement: "min"
+  - platform: template
+    name: "[CFG] 223 Time Interval Of Compressor Startup In Cooling mode"
+    id: heatpump_cfg_223_t_interval_c
+    unit_of_measurement: "min"
+  - platform: template
+    name: "[CFG] 224 dT1SC"
+    id: heatpump_cfg_224_dt1sc
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 225 dTSC"
+    id: heatpump_cfg_225_dtsc
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 226 T4cmax"
+    id: heatpump_cfg_226_t4cmax
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 227 T4cmin"
+    id: heatpump_cfg_227_t4cmin
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 228 Time Interval Of Compressor Startup In Heating mode"
+    id: heatpump_cfg_228_t_interval_h
+    unit_of_measurement: "min"
+  - platform: template
+    name: "[CFG] 229 dT1SH"
+    id: heatpump_cfg_229_dt1sh
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 230 dTSH"
+    id: heatpump_cfg_230_dtsh
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 231 T4hmax"
+    id: heatpump_cfg_231_t4hmax
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 232 T4hmin"
+    id: heatpump_cfg_232_t4hmin
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 233 Ambient Temp For Enabling IBH"
+    id: heatpump_cfg_233_t4_ibh_on
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 234 Temp Return Diff For Enabling IBH"
+    id: heatpump_cfg_234_dt1_ibh_on
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 235 Delay Time Of Enabling IBH"
+    id: heatpump_cfg_235_t_ibh_delay
+    unit_of_measurement: "min"
+  - platform: template
+    name: "[CFG] 237 Ambient Temp Trigger For AHS"
+    id: heatpump_cfg_237_t4_ahs_on
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 238 Trigger Temp Diff for AHS"
+    id: heatpump_cfg_238_dt1_ahs_on
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 240 Delay Time for Enabling AHS"
+    id: heatpump_cfg_240_t_ahs_delay
+    unit_of_measurement: "min"
+  - platform: template
+    name: "[CFG] 241 Water Heating Max Duration"
+    id: heatpump_cfg_241_t_dhwhp_max
+    unit_of_measurement: "min"
+  - platform: template
+    name: "[CFG] 242 T DHWHP Restrict"
+    id: heatpump_cfg_242_t_dhwhp_restrict
+    unit_of_measurement: "min"
+  - platform: template
+    name: "[CFG] 243 T4autocmin"
+    id: heatpump_cfg_243_t4autocmin
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 244 T4autohmax"
+    id: heatpump_cfg_244_t4autohmax
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 245 Temp When Holiday Mode Is Active"
+    id: heatpump_cfg_245_t1s_h_a_h
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 246 DHW Temp When Holiday Mode is Active"
+    id: heatpump_cfg_246_t5s_h_a_dhw
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 255 Temp Rise Day Number"
+    id: heatpump_cfg_255_t_dryup
+  - platform: template
+    name: "[CFG] 256 Drying Day Number"
+    id: heatpump_cfg_256_t_highpeak
+  - platform: template
+    name: "[CFG] 257 Temp Drop Day Number"
+    id: heatpump_cfg_257_t_dryd
+  - platform: template
+    name: "[CFG] 258 Highest Drying Temp"
+    id: heatpump_cfg_258_t_drypeak
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 259 Running Time Of Floor Heating First Time"
+    id: heatpump_cfg_259_t_firstfh
+    unit_of_measurement: "hr"
+  - platform: template
+    name: "[CFG] 260 T1S Of Floor Heating First Time"
+    id: heatpump_cfg_260_t1s_firstfh
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 261 T1SetC1"
+    id: heatpump_cfg_261_t1setc1
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 262 T1SetC2"
+    id: heatpump_cfg_262_t1setc2
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 263 T4C1"
+    id: heatpump_cfg_263_t4c1
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 264 T4C2"
+    id: heatpump_cfg_264_t4c2
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 265 T1SetH1"
+    id: heatpump_cfg_265_t1seth1
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 266 T1SetH2"
+    id: heatpump_cfg_266_t1seth2
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 267 T4H1"
+    id: heatpump_cfg_267_t4h1
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 268 T4H2"
+    id: heatpump_cfg_268_t4h2
+    unit_of_measurement: "°C"
+  - platform: template
+    name: "[CFG] 271 Built-in Circulating Pump Delay"
+    id: heatpump_cfg_271_t_delay_pump
+    unit_of_measurement: "min"
+# --- BINARY SENSORS ---
+binary_sensor:
+  - platform: template
+    name: "Compressor Running"
+    id: heatpump_compressor_running
+    device_class: running
+  - platform: template
+    name: "Status BIT 1 Defrosting"
+    id: heatpump_status_bit_1_defrosting
+  - platform: template
+    name: "Load Output Internal Circulation Pump PUMP_I"
+    id: heatpump_load_output_internal_circulation_pump_pump_i
+  - platform: template
+    name: "Load Output SV 1"
+    id: heatpump_load_output_sv1
+  - platform: template
+    name: "Load Output External Circulation Pump PUMP_O"
+    id: heatpump_load_output_external_circulation_pump_pump_o
+  - platform: template
+    name: "Load Output RUN"
+    id: heatpump_load_output_run
+    
+# --- SWITCHES ---
+switch:
+  - platform: template
+    name: "DIA Activate diagnostics sensors"
+    id: enable_diagnostics_switch
+    icon: "mdi:clipboard-pulse-outline"
+    lambda: |-
+      return id(enable_diagnostics);
+    turn_on_action:
+      - globals.set:
+          id: enable_diagnostics
+          value: 'true'
+    turn_off_action:
+      - globals.set:
+          id: enable_diagnostics
+          value: 'false'
+  - platform: template
+    name: "Room Temperature Control"
+    id: heatpump_room_temperature_control
+    turn_on_action:
+      then: []
+    turn_off_action:
+      then: []
+  - platform: template
+    name: "Water Flow Temperature Control Zone 1"
+    id: heatpump_water_flow_temperature_control_zone_1
+    turn_on_action:
+      then: []
+    turn_off_action:
+      then: []
+  - platform: template
+    name: "Power DHW T5S"
+    id: heatpump_power_dhw_t5s
+    turn_on_action:
+      then: []
+    turn_off_action:
+      then: []
+  - platform: template
+    name: "Water Flow Temperature Control Zone 2"
+    id: heatpump_water_flow_temperature_control_zone_2
+    turn_on_action:
+      then: []
+    turn_off_action:
+      then: []
+  - platform: template
+    name: "Function Setting Disinfect"
+    id: heatpump_function_setting_disinfect
+    turn_on_action:
+      then: []
+    turn_off_action:
+      then: []
+  - platform: template
+    name: "Function Setting Silent Mode"
+    id: heatpump_function_setting_silent_mode
+    turn_on_action:
+      then: []
+    turn_off_action:
+      then: []
+  - platform: template
+    name: "Function Setting ECO Mode"
+    id: heatpump_function_setting_eco_mode
+    turn_on_action:
+      then: []
+    turn_off_action:
+      then: []
+  - platform: template
+    name: "Weather Compensation Zone 1"
+    id: heatpump_weather_compensation_zone_1
+    turn_on_action:
+      then: []
+    turn_off_action:
+      then: []
+  - platform: template
+    name: "Weather Compensation Zone 2"
+    id: heatpump_weather_compensation_zone_2
+    turn_on_action:
+      then: []
+    turn_off_action:
+      then: []
+  - platform: template
+    name: "EnSwitchPDC"
+    id: heatpump_enswitchpdc
+    turn_on_action:
+      then: []
+    turn_off_action:
+      then: []
+
+# --- NUMBERS ---
+number:
+  - platform: template
+    name: "Set Water Temperature T1S Zone 1"
+    id: heatpump_set_water_temperature_t1s_zone_1
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 70
+    step: 1
+    set_action:
+      then: []
+  - platform: template
+    name: "Set Water Temperature T1S Zone 2"
+    id: heatpump_set_water_temperature_t1s_zone_2
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 70
+    step: 1
+    set_action:
+      then: []
+  - platform: template
+    name: "Set DHW Tank Temperature T5s"
+    id: heatpump_set_dhw_tank_temperature_t5s
+    unit_of_measurement: "°C"
+    min_value: 20
+    max_value: 70
+    step: 1
+    set_action:
+      then: []
+  - platform: template
+    name: "DELTATSOL Solar Temp Difference"
+    id: heatpump_deltatsol_temp_diff
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 20
+    step: 1
+    set_action:
+      then: []
+    
+# --- TEXT SENSORS ---
+text_sensor:
+  - platform: template
+    name: "DIA Last Request"
+    id: last_request_hex
+    icon: "mdi:upload"
+  - platform: template
+    name: "DIA Last Response"
+    id: last_response_hex
+    icon: "mdi:download"
+  - platform: template
+    name: "DIA Sniffer Status"
+    id: sniffer_status
+    icon: "mdi:information"
+  - platform: template
+    name: "Operating Mode (Text)"
+    id: heatpump_operating_mode_text
+  - platform: template
+    name: "Current Fault Error Code Description"
+    id: heatpump_current_fault_error_code_description
+  - platform: template
+    name: "Active State"
+    id: heatpump_active_state
+
+# ===================================================================
+#   Main Sniffer Logic (RELIABLE VERSION)
+# ===================================================================
+interval:
+  # --- Fast data download from the bus to the buffer ---
+  - interval: 1ms
+    then:
+      - lambda: |-
+          uint8_t byte;
+          while (id(mod_bus).available()) {
+            if (id(mod_bus).read_byte(&byte)) {
+              // Dodajemy bajt do bufora tylko jeśli nie jest to zerowy bajt na początku pustego bufora
+              if (!id(frame_buffer).empty() || byte != 0x00) {
+                id(frame_buffer).push_back(byte);
+                id(last_byte_millis) = millis();
+              }
+            }
+          }
+          
+  # --- Processing frames from the buffer---
+  - interval: 10ms
+    then:
+      - lambda: |-
+          // Nie przetwarzaj, jeśli bufor jest pusty lub ostatni bajt przyszedł zbyt niedawno
+          if (id(frame_buffer).empty() || (millis() - id(last_byte_millis) < 8)) {
+            return;
+          }
+
+          // Funkcja pomocnicza do obliczania CRC16
+          auto calc_crc = [](const std::vector<uint8_t>& data, size_t len) -> uint16_t {
+            uint16_t crc = 0xFFFF;
+            for (size_t i = 0; i < len; i++) {
+              crc ^= data[i];
+              for (uint8_t j = 0; j < 8; j++) {
+                if (crc & 0x0001) crc = (crc >> 1) ^ 0xA001;
+                else crc = crc >> 1;
+              }
+            }
+            return crc;
+          };
+
+          // Funkcja pomocnicza do konwersji danych na string HEX
+          auto to_hex = [](const std::vector<uint8_t>& data, size_t len) -> std::string {
+            std::string result = "";
+            for (size_t i = 0; i < len; i++) {
+              char buf[4];
+              sprintf(buf, "%02X ", data[i]);
+              result += buf;
+            }
+            return result;
+          };
+
+          auto& buffer = id(frame_buffer);
+          
+          while (buffer.size() >= 5) {
+            bool frame_processed = false;
+            uint8_t address = buffer[0];
+            uint8_t function = buffer[1];
+
+            // --- DEKODOWANIE ODPOWIEDZI (RESPONSE) ---
+            if (address == 0x01 && (function == 0x03 || function == 0x04) && buffer.size() >= 5) {
+              uint8_t byte_count = buffer[2];
+              if (byte_count >= 2 && byte_count <= 250 && byte_count % 2 == 0) {
+                size_t expected_len = 3 + byte_count + 2;
+                if (buffer.size() >= expected_len) {
+                  uint16_t crc_calc = calc_crc(buffer, expected_len - 2);
+                  uint16_t crc_frame = buffer[expected_len - 2] | (buffer[expected_len - 1] << 8);
+                  if (crc_calc == crc_frame) {
+                    id(response_count)++;
+                    if (id(enable_diagnostics)) {
+                      id(last_response_hex).publish_state(to_hex(buffer, expected_len) + "⬇");
+                    }
+                    if (!id(pending_requests).empty()) {
+                      uint16_t start_addr = id(pending_requests)[0];
+                      for (int i = 0; i < byte_count / 2; i++) {
+                        uint16_t reg_addr = start_addr + i;
+                        uint16_t reg_val = (buffer[3 + i*2] << 8) | buffer[4 + i*2];
+                        id(holding_registers)[reg_addr] = reg_val;
+                      }
+                      id(matched_count)++;
+                      id(publish_pending) = true; // Ustaw flagę, że mamy nowe dane
+                      int to_remove = byte_count / 2;
+                      if (to_remove > id(pending_requests).size()) to_remove = id(pending_requests).size();
+                      id(pending_requests).erase(id(pending_requests).begin(), id(pending_requests).begin() + to_remove);
+                      ESP_LOGD("modbus_sniffer", "MATCHED: Start=%u, Regs=%d", start_addr, byte_count/2);
+                    } else {
+                      ESP_LOGW("modbus_sniffer", "Odebrano odpowiedź bez oczekującego zapytania.");
+                    }
+                    buffer.erase(buffer.begin(), buffer.begin() + expected_len);
+                    frame_processed = true;
+                  }
+                }
+              }
+            }
+            
+            // --- DEKODOWANIE ZAPYTANIA (REQUEST) ---
+            if (!frame_processed && address >= 0x01 && address <= 0xF7 && (function == 0x03 || function == 0x04) && buffer.size() >= 8) {
+              uint16_t crc_calc = calc_crc(buffer, 6);
+              uint16_t crc_frame = buffer[6] | (buffer[7] << 8);
+              if (crc_calc == crc_frame) {
+                uint16_t start_addr = (buffer[2] << 8) | buffer[3];
+                uint16_t reg_count = (buffer[4] << 8) | buffer[5];
+                
+                // Logowanie nieznanych zapytań, gdy diagnostyka jest włączona
+                if (id(enable_diagnostics)) {
+                  static const std::set<uint16_t> known_registers = {
+                    0, 1, 2, 3, 4, 5, 6, 9, 10, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109,
+                    110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124,
+                    125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139,
+                    140, 141, 143, 144, 145, 146, 148, 149, 150, 151, 152, 153, 154, 155, 156,
+                    157, 164, 165, 166, 169, 170, 171, 172, 173, 176, 177, 178, 180, 181, 182,
+                    183, 185, 186, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212,
+                    213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227,
+                    228, 229, 230, 231, 232, 233, 234, 235, 237, 238, 240, 241, 242, 243, 244,
+                    245, 246, 255, 256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267,
+                    268, 269, 271, 272, 273, 274
+                  };
+                  bool has_unknown = false;
+                  for (uint16_t i = 0; i < reg_count; i++) {
+                    if (known_registers.count(start_addr + i) == 0) {
+                      has_unknown = true;
+                      break;
+                    }
+                  }
+                  if (has_unknown) {
+                    ESP_LOGW("modbus_sniffer", "WYKRYTO NIEZNANE ZAPYTANIE: Startowy Adres = %u, Liczba Rejestrów = %u", start_addr, reg_count);
+                  }
+                  id(last_request_hex).publish_state(to_hex(buffer, 8) + "⬆");
+                }
+                
+                // Obsługa kolejki zapytań
+                id(request_count)++;
+                for (uint16_t i = 0; i < reg_count && i < 125; i++) {
+                  id(pending_requests).push_back(start_addr + i);
+                }
+                while (id(pending_requests).size() > 200) {
+                  id(pending_requests).erase(id(pending_requests).begin());
+                }
+                
+                ESP_LOGD("modbus_sniffer", "REQUEST: Addr=%u, Start=%u, Count=%u", address, start_addr, reg_count);
+                buffer.erase(buffer.begin(), buffer.begin() + 8);
+                frame_processed = true;
+              }
+            }
+            
+            // Jeśli ramka nie została zdekodowana, usuń pierwszy bajt i spróbuj ponownie
+            if (!frame_processed) {
+              buffer.erase(buffer.begin());
+            }
+          }
+          
+          // Wyczyść bufor, jeśli jest mały i od dawna nie było nowych danych
+          if (buffer.size() < 5 && (millis() - id(last_byte_millis) > 50)) {
+            buffer.clear();
+          }
+
+  # --- Publish diagnostic statistics (when enabled) ---
+  - interval: 5s
+    then:
+      - lambda: |-
+          if (id(enable_diagnostics)) {
+            if (id(response_count) > 0) {
+              float match_rate = (float)id(matched_count) / id(response_count) * 100.0;
+              char status[100];
+              sprintf(status, "Req:%u Resp:%u Match:%u (%.0f%%)", id(request_count), id(response_count), id(matched_count), match_rate);
+              id(sniffer_status).publish_state(status);
+              id(request_counter_sensor).publish_state(id(request_count));
+              id(response_counter_sensor).publish_state(id(response_count));
+              id(matched_counter_sensor).publish_state(id(matched_count));
+            }
+          }
+          
+  # --- Intelligent data publishing to Home Assistant ---
+  - interval: 1s
+    then:
+      - lambda: |-
+          const uint32_t MIN_PUBLISH_INTERVAL = 15000; 
+          const uint32_t MAX_SILENCE_INTERVAL = 300000; 
+          const uint32_t SILENCE_AFTER_BURST = 1000;    
+
+          // Warunek 1: Czy są nowe dane I nastała cisza na magistrali?
+          bool trigger_by_silence = id(publish_pending) && (millis() - id(last_byte_millis) > SILENCE_AFTER_BURST);
+
+          // Warunek 2: Czy minął maksymalny czas od ostatniej publikacji?
+          bool trigger_by_timeout = (millis() - id(last_publish_millis) > MAX_SILENCE_INTERVAL);
+
+          if (trigger_by_silence || trigger_by_timeout) {
+            // Dodatkowy warunek: Ograniczenie częstotliwości publikacji
+            if (millis() - id(last_publish_millis) > MIN_PUBLISH_INTERVAL || trigger_by_timeout) {
+              ESP_LOGI("main_loop", "Publikowanie danych do Home Assistant...");
+              id(publish_all_states).execute();
+              id(last_publish_millis) = millis();
+              id(publish_pending) = false;
+            }
+          }
+# ===================================================================
+#   Data publishing script (FULL VERSION)
+# ===================================================================
+script:
+  - id: publish_all_states
+    then:
+      - lambda: |-
+          ESP_LOGI("modbus_sniffer", "Executing publish_all_states script...");
+          auto get_reg = [&](uint16_t addr, uint16_t def = 0) -> uint16_t {
+            return id(holding_registers).count(addr) ? id(holding_registers)[addr] : def;
+          };
+          auto get_dword = [&](uint16_t addr) -> uint32_t {
+            if (id(holding_registers).count(addr) && id(holding_registers).count(addr + 1)) {
+              return ((uint32_t)id(holding_registers)[addr] << 16) | id(holding_registers)[addr + 1];
+            }
+            return 0;
+          };
+
+          // --- PUBLIKACJA ---
+          uint16_t reg0 = get_reg(0);
+          id(heatpump_room_temperature_control).publish_state(reg0 & 0x01);
+          id(heatpump_water_flow_temperature_control_zone_1).publish_state(reg0 & 0x02);
+          id(heatpump_power_dhw_t5s).publish_state(reg0 & 0x04);
+          id(heatpump_water_flow_temperature_control_zone_2).publish_state(reg0 & 0x08);
+
+          uint16_t reg1 = get_reg(1);
+          if (reg1 == 1) id(heatpump_operational_mode).publish_state("Auto");
+          else if (reg1 == 2) id(heatpump_operational_mode).publish_state("Cool");
+          else if (reg1 == 3) id(heatpump_operational_mode).publish_state("Heat");
+
+          uint16_t reg2 = get_reg(2);
+          id(heatpump_set_water_temperature_t1s_zone_1).publish_state(reg2 & 0xFF);
+          id(heatpump_set_water_temperature_t1s_zone_2).publish_state(reg2 >> 8);
+          
+          id(heatpump_set_dhw_tank_temperature_t5s).publish_state(get_reg(4));
+
+          uint16_t reg5 = get_reg(5);
+          id(heatpump_function_setting_disinfect).publish_state(reg5 & 0x10);
+          id(heatpump_function_setting_silent_mode).publish_state(reg5 & 0x40);
+          id(heatpump_function_setting_eco_mode).publish_state(reg5 & 0x400);
+          id(heatpump_weather_compensation_zone_1).publish_state(reg5 & 0x1000);
+          id(heatpump_weather_compensation_zone_2).publish_state(reg5 & 0x2000);
+
+          id(heatpump_forced_hydraulic_module_rear_electric_heater_1).publish_state(get_reg(9));
+          id(heatpump_t_sg_max).publish_state(get_reg(10));
+          
+          uint16_t freq = get_reg(100);
+          id(heatpump_compressor_operating_frequency).publish_state(freq);
+          id(heatpump_compressor_running).publish_state(freq > 0);
+
+          uint16_t reg101 = get_reg(101);
+          if (reg101 == 2) id(heatpump_operating_mode_text).publish_state("Cooling");
+          else if (reg101 == 3) id(heatpump_operating_mode_text).publish_state("Heating");
+          else if (reg101 == 5) id(heatpump_operating_mode_text).publish_state("DHW Heating");
+          else id(heatpump_operating_mode_text).publish_state("OFF/Idle");
+
+          id(heatpump_fan_speed).publish_state(get_reg(102));
+          id(heatpump_pmv_openness).publish_state(get_reg(103) / 4.8);
+          id(heatpump_water_inlet_temperature).publish_state((int16_t)get_reg(104));
+          id(heatpump_water_outlet_temperature).publish_state((int16_t)get_reg(105));
+          id(heatpump_condensor_temperature_t3).publish_state((int16_t)get_reg(106));
+          id(heatpump_outdoor_ambient_temperature).publish_state((int16_t)get_reg(107));
+          id(heatpump_discharge_temperature).publish_state((int16_t)get_reg(108));
+          id(heatpump_return_air_temperature).publish_state((int16_t)get_reg(109));
+          id(heatpump_total_water_outlet_temperature_t1).publish_state((int16_t)get_reg(110));
+          id(heatpump_system_total_water_outlet_temperature_t1b).publish_state((int16_t)get_reg(111));
+          id(heatpump_refrigerant_liquid_side_temperature_t2).publish_state((int16_t)get_reg(112));
+          id(heatpump_refrigerant_gas_side_temperature_t2b).publish_state((int16_t)get_reg(113));
+          id(heatpump_room_temperature_ta).publish_state((int16_t)get_reg(114));
+          id(heatpump_water_tank_temperature_t5).publish_state((int16_t)get_reg(115));
+          id(heatpump_outdoor_unit_high_pressure).publish_state(get_reg(116));
+          id(heatpump_outdoor_unit_low_pressure).publish_state(get_reg(117));
+          id(heatpump_outdoor_unit_current).publish_state(get_reg(118) / 10.0);
+          id(heatpump_outdoor_unit_voltage).publish_state(get_reg(119));
+          id(heatpump_tbt1).publish_state(get_reg(120));
+          id(heatpump_tbt2).publish_state(get_reg(121));
+          id(heatpump_compressor_operation_time).publish_state(get_reg(122));
+          id(heatpump_unit_capacity).publish_state(get_reg(123));
+          id(heatpump_current_fault).publish_state(get_reg(124));
+          id(heatpump_fault_1).publish_state(get_reg(125));
+          id(heatpump_fault_2).publish_state(get_reg(126));
+          id(heatpump_fault_3).publish_state(get_reg(127));
+
+          uint16_t reg128 = get_reg(128);
+          id(heatpump_status_bit_1_defrosting).publish_state(reg128 & 0x02);
+
+          uint16_t reg129 = get_reg(129);
+          id(heatpump_load_output_internal_circulation_pump_pump_i).publish_state(reg129 & 0x08);
+          id(heatpump_load_output_sv1).publish_state(reg129 & 0x10);
+          id(heatpump_load_output_external_circulation_pump_pump_o).publish_state(reg129 & 0x40);
+          id(heatpump_load_output_run).publish_state(reg129 & 0x2000);
+
+          id(heatpump_software_version).publish_state(get_reg(130));
+          id(heatpump_wired_controller_version_number).publish_state(get_reg(131));
+          id(heatpump_compressor_target_frequency).publish_state(get_reg(132));
+          id(heatpump_dc_bus_current).publish_state(get_reg(133));
+          id(heatpump_dc_bus_voltage).publish_state(get_reg(134) * 10);
+          id(heatpump_tf_module_temperature).publish_state((int16_t)get_reg(135));
+          id(heatpump_climate_curve_t1s_calculated_value_1).publish_state((int16_t)get_reg(136));
+          id(heatpump_climate_curve_t1s_calculated_value_2).publish_state((int16_t)get_reg(137));
+          id(heatpump_water_flow).publish_state(get_reg(138) * 0.01);
+          id(heatpump_limit_scheme_of_outdoor_unit_current).publish_state(get_reg(139));
+          id(heatpump_ability_of_hydraulic_module).publish_state(get_reg(140) * 0.01);
+          id(heatpump_tsolar).publish_state((int16_t)get_reg(141));
+          
+          id(heatpump_electricity_consumption).publish_state(get_dword(143));
+          id(heatpump_power_output).publish_state(get_dword(145));
+
+          id(heatpump_realtime_heating_capacity).publish_state(get_reg(148) * 0.01);
+          id(heatpump_realtime_renewable_heating_capacity).publish_state(get_reg(149) * 0.01);
+          id(heatpump_realtime_heating_power_consumption).publish_state(get_reg(150) * 0.01);
+          id(heatpump_realtime_heating_cop).publish_state(get_reg(151) * 0.01);
+          id(heatpump_total_heating_energy_produced_for_system).publish_state(get_dword(152) * 0.01);
+          id(heatpump_total_renewable_heating_energy_produced_for_system).publish_state(get_dword(154) * 0.01);
+          id(heatpump_total_heating_power_consumed_for_system).publish_state(get_dword(156) * 0.01);
+          id(heatpump_total_cop_in_heating_mode_for_master_unit).publish_state(get_reg(164) * 0.01);
+          id(heatpump_total_cooling_energy_produced_for_master_unit).publish_state(get_dword(165) * 0.01);
+          id(heatpump_total_cooling_power_consumed_for_master_unit).publish_state(get_dword(169) * 0.01);
+          id(heatpump_total_cop_in_cooling_mode_for_master_unit).publish_state(get_reg(171) * 0.01);
+          id(heatpump_total_dhw_energy_produced_for_master_unit).publish_state(get_dword(172) * 0.01);
+          id(heatpump_total_dhw_power_consumed_for_master_unit).publish_state(get_dword(176) * 0.01);
+          id(heatpump_total_cop_in_dhw_mode_for_master_unit).publish_state(get_reg(178) * 0.01);
+          id(heatpump_realtime_cooling_capacity).publish_state(get_reg(180) * 0.01);
+          id(heatpump_realtime_cooling_power_consumption).publish_state(get_reg(181) * 0.01);
+          id(heatpump_realtime_cooling_eer).publish_state(get_reg(182) * 0.01);
+          id(heatpump_realtime_dhw_heating_capacity).publish_state(get_reg(183) * 0.01);
+          id(heatpump_realtime_dhw_heating_power_consumption).publish_state(get_reg(185) * 0.01);
+          id(heatpump_realtime_dhw_heating_cop).publish_state(get_reg(186) * 0.01);
+          id(heatpump_cfg_air_temp_ts).publish_state(get_reg(3) / 2.0);
+          uint16_t reg6 = get_reg(6);
+          id(heatpump_cfg_weather_curve_z1).publish_state(reg6 & 0xFF);
+          id(heatpump_cfg_weather_curve_z2).publish_state(reg6 >> 8);
+          uint16_t reg201 = get_reg(201);
+          id(heatpump_cfg_201_temp_upper_limit_t1s_cooling_zone_1).publish_state(reg201 & 0xFF);
+          id(heatpump_cfg_201_temp_upper_limit_t1s_cooling_zone_2).publish_state(reg201 >> 8);
+          uint16_t reg202 = get_reg(202);
+          id(heatpump_cfg_202_temp_lower_limit_t1s_cooling_zone_1).publish_state(reg202 & 0xFF);
+          id(heatpump_cfg_202_temp_lower_limit_t1s_cooling_zone_2).publish_state(reg202 >> 8);
+          uint16_t reg203 = get_reg(203);
+          id(heatpump_cfg_203_temp_upper_limit_t1s_heating_zone_1).publish_state(reg203 & 0xFF);
+          id(heatpump_cfg_203_temp_upper_limit_t1s_heating_zone_2).publish_state(reg203 >> 8);
+          uint16_t reg204 = get_reg(204);
+          id(heatpump_cfg_204_temp_lower_limit_t1s_heating_zone_1).publish_state(reg204 & 0xFF);
+          id(heatpump_cfg_204_temp_lower_limit_t1s_heating_zone_2).publish_state(reg204 >> 8);
+          id(heatpump_cfg_205_temp_upper_limit_of_ts_setting).publish_state(get_reg(205) / 2.0);
+          id(heatpump_cfg_206_temp_lower_limit_of_ts_setting).publish_state(get_reg(206) / 2.0);
+          id(heatpump_cfg_207_temp_upper_limit_of_water_heating).publish_state(get_reg(207));
+          id(heatpump_cfg_208_temp_lower_limit_of_water_heating).publish_state(get_reg(208));
+          id(heatpump_cfg_209_dhw_pump_return_running_time).publish_state(get_reg(209));
+          id(heatpump_cfg_212_dt5_on).publish_state(get_reg(212));
+          id(heatpump_cfg_213_dt1s5).publish_state(get_reg(213));
+          id(heatpump_cfg_214_t_interval_dhw).publish_state(get_reg(214));
+          id(heatpump_cfg_215_t4_dhw_max).publish_state(get_reg(215));
+          id(heatpump_cfg_216_t4dhwmin).publish_state((int16_t)get_reg(216));
+          id(heatpump_cfg_217_t_tbh_delay).publish_state(get_reg(217));
+          id(heatpump_cfg_218_dt5_tbh_off).publish_state(get_reg(218));
+          id(heatpump_cfg_219_t4_tbh_on).publish_state((int16_t)get_reg(219));
+          id(heatpump_cfg_220_t5s_di).publish_state(get_reg(220));
+          id(heatpump_cfg_221_t_di_max).publish_state(get_reg(221));
+          id(heatpump_cfg_222_t_di_hightemp).publish_state(get_reg(222));
+          id(heatpump_cfg_223_t_interval_c).publish_state(get_reg(223));
+          id(heatpump_cfg_224_dt1sc).publish_state(get_reg(224));
+          id(heatpump_cfg_225_dtsc).publish_state(get_reg(225));
+          id(heatpump_cfg_226_t4cmax).publish_state(get_reg(226));
+          id(heatpump_cfg_227_t4cmin).publish_state((int16_t)get_reg(227));
+          id(heatpump_cfg_228_t_interval_h).publish_state(get_reg(228));
+          id(heatpump_cfg_229_dt1sh).publish_state(get_reg(229));
+          id(heatpump_cfg_230_dtsh).publish_state(get_reg(230));
+          id(heatpump_cfg_231_t4hmax).publish_state(get_reg(231));
+          id(heatpump_cfg_232_t4hmin).publish_state((int16_t)get_reg(232));
+          id(heatpump_cfg_233_t4_ibh_on).publish_state((int16_t)get_reg(233));
+          id(heatpump_cfg_234_dt1_ibh_on).publish_state(get_reg(234));
+          id(heatpump_cfg_235_t_ibh_delay).publish_state(get_reg(235));
+          id(heatpump_cfg_237_t4_ahs_on).publish_state((int16_t)get_reg(237));
+          id(heatpump_cfg_238_dt1_ahs_on).publish_state(get_reg(238));
+          id(heatpump_cfg_240_t_ahs_delay).publish_state(get_reg(240));
+          id(heatpump_cfg_241_t_dhwhp_max).publish_state(get_reg(241));
+          id(heatpump_cfg_242_t_dhwhp_restrict).publish_state(get_reg(242));
+          id(heatpump_cfg_243_t4autocmin).publish_state(get_reg(243));
+          id(heatpump_cfg_244_t4autohmax).publish_state(get_reg(244));
+          id(heatpump_cfg_245_t1s_h_a_h).publish_state(get_reg(245));
+          id(heatpump_cfg_246_t5s_h_a_dhw).publish_state(get_reg(246));
+          id(heatpump_cfg_255_t_dryup).publish_state(get_reg(255));
+          id(heatpump_cfg_256_t_highpeak).publish_state(get_reg(256));
+          id(heatpump_cfg_257_t_dryd).publish_state(get_reg(257));
+          id(heatpump_cfg_258_t_drypeak).publish_state(get_reg(258));
+          id(heatpump_cfg_259_t_firstfh).publish_state(get_reg(259));
+          id(heatpump_cfg_260_t1s_firstfh).publish_state(get_reg(260));
+          id(heatpump_cfg_261_t1setc1).publish_state(get_reg(261));
+          id(heatpump_cfg_262_t1setc2).publish_state(get_reg(262));
+          id(heatpump_cfg_263_t4c1).publish_state((int16_t)get_reg(263));
+          id(heatpump_cfg_264_t4c2).publish_state((int16_t)get_reg(264));
+          id(heatpump_cfg_265_t1seth1).publish_state(get_reg(265));
+          id(heatpump_cfg_266_t1seth2).publish_state(get_reg(266));
+          id(heatpump_cfg_267_t4h1).publish_state((int16_t)get_reg(267));
+          id(heatpump_cfg_268_t4h2).publish_state((int16_t)get_reg(268));
+          id(heatpump_cfg_271_t_delay_pump).publish_state(get_reg(271) * 2.0);
+
+
+          // Poprawiona logika dla Power Input Limitation Type
+          uint16_t reg269 = get_reg(269);
+          if (reg269 == 0) {
+            id(heatpump_power_input_limitation_type).publish_state("None");
+          } else {
+            // Dla wartości 1-8, konwersja na tekst jest poprawna
+            id(heatpump_power_input_limitation_type).publish_state(std::to_string(reg269));
+          }
+          
+          uint16_t reg272 = get_reg(272);
+          const char* emission_map[] = {"Underfloor Heating", "Fan Coil Unit", "Radiator", "Unknown"};
+          uint8_t z1h = reg272 & 0xF;
+          uint8_t z2h = (reg272 >> 4) & 0xF;
+          uint8_t z1c = (reg272 >> 8) & 0xF;
+          uint8_t z2c = (reg272 >> 12) & 0xF;
+          id(heatpump_zone_1_end_heating_mode_emission_type).publish_state(emission_map[z1h > 2 ? 3 : z1h]);
+          id(heatpump_zone_2_end_heating_mode_emission_type).publish_state(emission_map[z2h > 2 ? 3 : z2h]);
+          id(heatpump_zone_1_end_cooling_mode_emission_type).publish_state(emission_map[z1c > 2 ? 3 : z1c]);
+          id(heatpump_zone_2_end_cooling_mode_emission_type).publish_state(emission_map[z2c > 2 ? 3 : z2c]);
+
+          uint16_t reg273 = get_reg(273);
+          uint8_t solar_func = reg273 & 0xFF;
+          if (solar_func == 1) id(heatpump_solar_function_mode).publish_state("Solar + Heat Pump");
+          else if (solar_func == 2) id(heatpump_solar_function_mode).publish_state("Only Solar");
+          else id(heatpump_solar_function_mode).publish_state("No Function");
+          id(heatpump_deltatsol_temp_diff).publish_state(reg273 >> 8);
+
+          id(heatpump_enswitchpdc).publish_state(get_reg(274) & 0x01);
+
+          // Active State Logic
+          if (id(heatpump_load_output_run).state) {
+            if (id(heatpump_status_bit_1_defrosting).state) id(heatpump_active_state).publish_state("Defrosting");
+            else if (id(heatpump_load_output_sv1).state) id(heatpump_active_state).publish_state("DHW");
+            else {
+              if (id(heatpump_operating_mode_text).state == "Heating") id(heatpump_active_state).publish_state("Heating");
+              else if (id(heatpump_operating_mode_text).state == "Cooling") id(heatpump_active_state).publish_state("Cooling");
+              else id(heatpump_active_state).publish_state("Idle");
+            }
+
+          } else {
+            id(heatpump_active_state).publish_state("Inactive");
+          }
