@@ -2,7 +2,7 @@
 
 This project provides a complete solution for passively monitoring Kaisai, Midea, and other rebranded air-to-water heat pumps via their Modbus RTU (RS485) interface. It uses an ESP32 and ESPHome to "sniff" the communication between the controller and the heat pump, allowing for seamless integration into Home Assistant without sending any active requests that could conflict with the main controller.
 
-This "listen-only" approach is highly stable and safe, as it never writes to the Modbus bus unless explicitly configured for active control.
+This **"listen-only**" approach is highly stable and safe, as it never writes to the Modbus bus unless explicitly configured for active control.
 
 ![My Installation](images/my-installation-1.jpg)
 
@@ -21,10 +21,12 @@ This "listen-only" approach is highly stable and safe, as it never writes to the
 | Component | Quantity | Notes |
 | :--- | :--- | :--- |
 | ESP32 Development Board | 1 | A NodeMCU ESP32 DEVKITV1 was used, but any ESP32 board will work. |
-| RS485 to TTL Converter | 1 | A standard 3.3V/5V compatible module. |
+| RS485 to TTL Converter | 1 | A **MAX485** 3.3V/5V compatible module. |
 | Small Junction Box | 1 | To house the electronics safely. |
 | 5V DC Power Supply | 1 | A micro-USB phone charger is perfect. |
 | Jumper Wires | - | For connecting the components. |
+
+
 
 ## Hardware Assembly & Wiring
 
