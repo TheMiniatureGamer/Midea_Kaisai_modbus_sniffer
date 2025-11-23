@@ -4,7 +4,7 @@ This project provides a complete solution for passively monitoring Kaisai, Midea
 
 This **"listen-only**" approach is highly stable and safe, as it never writes to the Modbus bus unless explicitly configured for active control.
 
-![My Installation](Picture_7.jpg)
+![My Installation](images/Picture_7.jpg)
 
 
 ## Features
@@ -60,7 +60,7 @@ The key is to connect the `A` and `B` lines from the heat pump's network module 
 
 Most RS485 modules include a 120Ω termination resistor (often labeled R7) soldered onto the board. This resistor is only needed at the two physical ends of a Modbus bus. Since this sniffer is being connected in the middle of the bus, you must remove this resistor. De-soldering R7 will prevent it from interfering with the existing bus communication.
 
-![My Installation](Picture_8.jpg)
+![My Installation](images/Picture_8.jpg)
 
 ### Installation Photos
 
@@ -69,10 +69,10 @@ Here is how the final assembly looks in practice.
 1.  **The Electronics:** The ESP32 board connected to the RS485-to-TTL converter.
 2.  **Kaisai Network Module:** The RS485 `A` and `B` terminals where the sniffer is connected in parallel.
 3.  **The RS485 Converter:** Close-up of the converter module with wires attached.
-![My Installation](Picture_1.jpg)
-![My Installation](Picture_6.jpg)
-![My Installation](Picture_5.jpg)
-![My Installation](Picture_2.jpg)
+![My Installation](images/Picture_1.jpg)
+![My Installation](images/Picture_6.jpg)
+![My Installation](images/Picture_5.jpg)
+![My Installation](images/Picture_2.jpg)
 
 ## Software Setup
 
