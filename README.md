@@ -4,7 +4,7 @@ This project provides a complete solution for passively monitoring Kaisai, Midea
 
 This **"listen-only**" approach is highly stable and safe, as it never writes to the Modbus bus unless explicitly configured for active control.
 
-![My Installation](images/my-installation-1.jpg)
+![My Installation](Picture_7.jpg)
 
 
 ## Features
@@ -59,6 +59,8 @@ The key is to connect the `A` and `B` lines from the heat pump's network module 
 | `B` | `H1` | 
 
 Most RS485 modules include a 120Ω termination resistor (often labeled R7) soldered onto the board. This resistor is only needed at the two physical ends of a Modbus bus. Since this sniffer is being connected in the middle of the bus, you must remove this resistor. De-soldering R7 will prevent it from interfering with the existing bus communication.
+
+![My Installation](Picture_8.jpg)
 
 ### Installation Photos
 
