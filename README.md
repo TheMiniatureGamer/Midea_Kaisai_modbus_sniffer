@@ -40,11 +40,11 @@ The key is to connect the `A` and `B` lines from the heat pump's network module 
 | ESP32 Pin | RS485 Module Pin | Description |
 | :--- | :--- | :--- |
 | `GND` | `GND` | Ground |
-| `VIN` (5V) | `VCC` | 5V Power |
+| `Vout` (3V) | `VCC` | 3V Power |
 | `GPIO 16` (RX2) | `RO` | Receiver Output (Data from bus to ESP32) |
 | *Not Connected* | `DI` | Driver Input (Not used in passive mode) |
-| *Not Connected* | `DE` | Driver Enable (Jumper to RE) |
-| *Not Connected* | `RE` | Receiver Enable (Jumper to DE) |
+| `GND` | `DE` | Driver Enable Connected to GND |
+| `GND` | `RE` | Receiver Enable Connected to GND|
 
 *Note: The `DE` and `RE` pins on many modules are jumpered together. In passive mode, they don't need to be connected to the ESP32.*
 
