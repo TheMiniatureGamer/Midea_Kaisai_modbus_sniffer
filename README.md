@@ -21,12 +21,11 @@ This **"listen-only**" approach is highly stable and safe, as it never writes to
 | Component | Quantity | Notes |
 | :--- | :--- | :--- |
 | ESP32 Development Board | 1 | A NodeMCU ESP32 DEVKITV1 was used, but any ESP32 board will work. |
-| RS485 to TTL Converter | 1 | A **MAX485** 3.3V/5V compatible module. |
+| RS485 to TTL Converter | 1 | A **MAX485** 3.3V/5V compatible module. [RS485 to TTL Converter](https://pl.aliexpress.com/w/wholesale-max485.html?g=y&SearchText=max485&sortType=total_tranpro_desc) |
 | Small Junction Box | 1 | To house the electronics safely. |
 | 5V DC Power Supply | 1 | A micro-USB phone charger is perfect. |
 | Jumper Wires | - | For connecting the components. |
 
-[RS485 to TTL Converter](https://pl.aliexpress.com/w/wholesale-max485.html?g=y&SearchText=max485&sortType=total_tranpro_desc)
 
 
 ## Hardware Assembly & Wiring
