@@ -122,7 +122,7 @@ This event-driven approach is far more efficient and robust than fixed-interval 
 ## Credits
 
 - This project was developed by [TheMiniatureGamer].
-- The sniffing logic and approach were inspired by various online resources, including the "RS485 sniffer" project documented by Marco Reps.
+- The sniffing logic and approach were inspired by various online resources, including  https://github.com/Mosibi/Midea-heat-pump-ESPHome.
 
 ## License
 
