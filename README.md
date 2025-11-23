@@ -52,8 +52,8 @@ The key is to connect the `A` and `B` lines from the heat pump's network module 
 
 | RS485 Module Terminal | Heat Pump Terminal | Description |
 | :--- | :--- | :--- |
-| `A` | `A` or `RS485-A` | Non-inverting Data Line |
-| `B` | `B` or `RS485-B` | Inverting Data Line |
+| `A` | `H2` | Non-inverting Data Line |
+| `B` | `H1` | Inverting Data Line |
 
 ### Installation Photos
 
