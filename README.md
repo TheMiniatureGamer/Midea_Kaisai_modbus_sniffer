@@ -50,10 +50,10 @@ The key is to connect the `A` and `B` lines from the heat pump's network module 
 
 **RS485 Module <-> Heat Pump Network Module (e.g., Kaisai):**
 
-| RS485 Module Terminal | Heat Pump Terminal | Description |
-| :--- | :--- | :--- |
-| `A` | `H2` | Non-inverting Data Line |
-| `B` | `H1` | Inverting Data Line |
+| RS485 Module Terminal | Heat Pump Terminal | 
+| :--- | :--- | 
+| `A` | `H2` | 
+| `B` | `H1` | 
 
 ### Installation Photos
 
