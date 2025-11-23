@@ -46,14 +46,16 @@ The key is to connect the `A` and `B` lines from the heat pump's network module 
 | `GND` | `DE` | Driver Enable Connected to GND |
 | `GND` | `RE` | Receiver Enable Connected to GND|
 
-*Note: The `DE` and `RE` pins on many modules are jumpered together. In passive mode, they don't need to be connected to the ESP32.*
 
 **RS485 Module <-> Heat Pump Network Module (e.g., Kaisai):**
+
 
 | RS485 Module Terminal | Heat Pump Terminal | 
 | :--- | :--- | 
 | `A` | `H2` | 
 | `B` | `H1` | 
+
+Most RS485 modules include a 120Ω termination resistor (often labeled R7) soldered onto the board. This resistor is only needed at the two physical ends of a Modbus bus. Since this sniffer is being connected in the middle of the bus, you must remove this resistor. De-soldering R7 will prevent it from interfering with the existing bus communication.
 
 ### Installation Photos
 
